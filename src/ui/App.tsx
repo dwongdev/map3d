@@ -1,4 +1,4 @@
-import { css } from "@emotion/react";
+import { css, keyframes } from "@emotion/react";
 import { Space } from "../three/Space";
 import { FullscreenModal } from "../components/FullscreenModal";
 import { Title } from "@/components/text/Title";
@@ -11,8 +11,8 @@ import {
   NextButton,
   PrevButton,
 } from "@/components/button/BottomButton";
-import { BuildingHeights } from "@/components/map/Processing";
-import { ChevronLeft, ChevronRight, Download } from "lucide-react";
+import { BuildingHeights, Building } from "@/components/map/Processing";
+import { ChevronLeft, ChevronRight, Download, Loader2 } from "lucide-react";
 import { useAreaStore } from "@/state/areaStore";
 import { useActionStore } from "@/state/exportStore";
 import { Modal } from "@/components/modal/Modal";
@@ -26,6 +26,11 @@ const IconSize = css({
   height: "14px",
 });
 
+const spinAnimation = keyframes`
+from { transform: rotate(0deg); }
+to { transform: rotate(360deg); }
+`;
+
 function App() {
   const [isNextButtonDisabled, setIsNextButtonDisabled] = useState(true);
   const [areaData, setAreaData] = useState([]);
@@ -36,8 +41,12 @@ function App() {
   const [isFleetLogin, setIsFleetLogin] = useState(false);
   const [isFleetModal, setIsFleetModal] = useState(false);
   const [spaceList, setSpaceList] = useState([]);
+  const [buildings, setBuildings] = useState<Building[]>([]);
+  const [isFetchingBuildings, setIsFetchingBuildings] = useState(false);
+  const [hasFetchedBuildings, setHasFetchedBuildings] = useState(false);
 
   const setCenter = useAreaStore((state) => state.setCenter);
+  const appendAreas = useAreaStore((state) => state.appendAreas);
   const setAction = useActionStore((state) => state.setAction);
   const setFleet = useActionStore((state) => state.setFleet);
 
@@ -101,17 +110,57 @@ function App() {
     setCenter(data);
     console.log(data, "AAEE");
     setIsNextButtonDisabled(false);
+    setBuildings([]);
+    setHasFetchedBuildings(false);
   };
 
   const handleRemove = () => {
     setAreaData([]);
     setIsNextButtonDisabled(true);
+    setBuildings([]);
+    setHasFetchedBuildings(false);
   };
 
-  const handleClickNextStep = () => {
+  const requestBuildings = async () => {
+    setIsFetchingBuildings(true);
+
+    const south = areaData[1].lat;
+    const west = areaData[1].lng;
+    const north = areaData[0].lat;
+    const east = areaData[0].lng;
+    const query = `[out:json][timeout:25];(way["building"]( ${south},${west},${north},${east} );relation["building"]( ${south},${west},${north},${east} ););out body geom;`;
+    try {
+      const response = await fetch("https://overpass-api.de/api/interpreter", {
+        method: "POST",
+        body: query,
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      });
+      const data = await response.json();
+      const blds: Building[] = data.elements.map((element) => ({
+        id: element.id,
+        tags: element.tags,
+        geometry: element.geometry
+          ? element.geometry.map((pt) => ({ lat: pt.lat, lng: pt.lon }))
+          : undefined,
+      }));
+      setBuildings(blds);
+      appendAreas(blds);
+      setHasFetchedBuildings(true);
+    } catch (error) {
+      console.error("Error fetching building data:", error);
+    } finally {
+      setIsFetchingBuildings(false);
+    }
+  };
+
+  const handleClickNextStep = async () => {
     if (step == 0 && checkIsBig()) {
       setIsWarnModal(true);
       return false;
+    }
+    if (step == 1 && !hasFetchedBuildings) {
+      await requestBuildings();
+      return;
     }
     setStep(step + 1);
   };
@@ -153,10 +202,14 @@ function App() {
           <Column gap="0.5rem">
             <Title>Processing</Title>
             <Description>
-              Click the button below to get the building information.
+              Click Next Step to fetch building information. Once loaded, click
+              Next Step again to view the 3D scene.
             </Description>
 
-            <BuildingHeights area={areaData} />
+            <BuildingHeights
+              buildings={buildings}
+              loading={isFetchingBuildings}
+            />
           </Column>
         </Column>
       </FullscreenModal>
@@ -167,10 +220,24 @@ function App() {
 
       <NextButton
         isShow={step != 2}
-        disabled={isNextButtonDisabled}
+        disabled={isNextButtonDisabled || isFetchingBuildings}
         onClick={handleClickNextStep}
       >
-        Next Step <ChevronRight css={IconSize} />
+        {isFetchingBuildings ? (
+          <>
+            <Loader2
+              css={[
+                IconSize,
+                css({ animation: `${spinAnimation} 1s linear infinite` }),
+              ]}
+            />
+            Fetching...
+          </>
+        ) : (
+          <>
+            Next Step <ChevronRight css={IconSize} />
+          </>
+        )}
       </NextButton>
 
       <NextButton isShow={step == 2} onClick={handleClickExport}>
