@@ -7,8 +7,8 @@ type AreaStore = {
     lng: number;
   }[];
 
-  appendAreas: (areas: []) => void;
-  setCenter: (center: []) => void;
+  appendAreas: (areas: any[]) => void;
+  setCenter: (center: any[]) => void;
 };
 
 export const useAreaStore = create<AreaStore>((set) => ({

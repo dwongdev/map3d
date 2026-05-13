@@ -43,6 +43,7 @@ function Building({
         e.stopPropagation();
       }}
       rotation={[-Math.PI / 2, 0, 0]}
+      userData={{ exportToGLB: true }}
     >
       <extrudeGeometry args={[shape, extrudeSettings]} />
       <meshStandardMaterial color={hovered || clicked ? "#007bff" : "#9da0a3"} />
@@ -353,7 +354,14 @@ function Roads({ area }: { area: any }) {
 
         const lineGeometry: any = new THREE.BufferGeometry().setFromPoints(points);
 
-        return <Line points={points} color="#34f516" lineWidth={1}></Line>;
+        return (
+          <Line
+            points={points}
+            color="#34f516"
+            lineWidth={1}
+            userData={{ exportToGLB: true }}
+          ></Line>
+        );
       })}
     </>
   );
@@ -391,15 +399,16 @@ export function Export() {
   };
 
   const exportGLB = () => {
-    const sceneClone = scene.clone(true);
-    sceneClone.traverse((child) => {
-      if (child.userData && child.userData.skipExport === true) child.parent?.remove(child);
-      if ((child as any).isHtml === true) child.parent?.remove(child);
+    const exportRoot = new THREE.Group();
+    scene.traverse((child) => {
+      if (child.userData?.exportToGLB === true) {
+        exportRoot.add(child.clone(true));
+      }
     });
     const exporter = new GLTFExporter();
     const options = { binary: true, embedImages: true };
     exporter.parse(
-      sceneClone,
+      exportRoot,
       (result) => {
         if (result instanceof ArrayBuffer) {
           const blob = new Blob([result], { type: "model/gltf-binary" });
